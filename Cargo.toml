@@ -1,0 +1,7 @@
+[package]
+name = "spiner"
+version = "0.1.0"
+authors = ["reeFridge <reefridgerator@gmail.com>"]
+
+[dependencies.libspine-sys]
+git = "https://github.com/reeFridge/libspine-sys.git"
