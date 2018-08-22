@@ -1,2 +1,2 @@
 # spiner
-Spine runtime and ideomatic interface for libspine-sys
+Spine runtime and idiomatic interface for libspine-sys
