@@ -1,6 +1,7 @@
-use libspine_sys::{spSlot, spAttachment};
+use libspine_sys::{spSlot, spAttachment, spBone};
 use attachment::Attachment;
 use common::AsPtr;
+use bone::Bone;
 
 pub struct Slot {
     raw_ptr: *mut spSlot
@@ -23,5 +24,13 @@ impl Slot {
         };
 
         attach_ref.map(|attach| Attachment::from(attach as *const spAttachment))
+    }
+
+    pub fn bone(&self) -> Option<Bone> {
+        let bone_ref = unsafe {
+            (*self.raw_ptr).bone.as_ref()
+        };
+
+        bone_ref.map(|bone| Bone::from(bone as *const spBone))
     }
 }

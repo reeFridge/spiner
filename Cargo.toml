@@ -5,3 +5,13 @@ authors = ["reeFridge <reefridgerator@gmail.com>"]
 
 [dependencies.libspine-sys]
 git = "https://github.com/reeFridge/libspine-sys.git"
+
+[[example]]
+name = "rendering"
+path = "examples/rendering/src/main.rs"
+
+[dev-dependencies]
+libc = "0.2"
+png = "0.12"
+glium = "0.22"
+time = "0.1"
