@@ -9,6 +9,12 @@ pub struct Region {
 impl_as_ptr!(Region, spRegionAttachment);
 
 impl Region {
+    pub fn uvs(&self) -> [f32; 8] {
+        unsafe {
+            (*self.raw_ptr).uvs
+        }
+    }
+    
     pub fn compute_world_vertices(&self, bone: &Bone, vertices: &mut Vec<f32>, offset: i32, stride: i32) {
         unsafe {
             spRegionAttachment_computeWorldVertices(self.raw_ptr as *mut spRegionAttachment, bone.as_ptr() as *mut spBone, vertices.as_mut_ptr(), offset, stride);

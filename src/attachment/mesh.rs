@@ -10,6 +10,13 @@ pub struct Mesh {
 impl_as_ptr!(Mesh, spMeshAttachment);
 
 impl Mesh {
+    pub fn uvs(&self) -> Vec<f32> {
+        unsafe {
+            let len = self.world_vertices_len();
+            from_raw_buf((*self.raw_ptr).uvs, len)
+        }
+    }
+    
     pub fn triangles(&self) -> Vec<u16> {
         unsafe {
             let len = (*self.raw_ptr).trianglesCount as usize;

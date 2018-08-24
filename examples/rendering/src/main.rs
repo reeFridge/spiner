@@ -27,7 +27,7 @@ const MAX_VERTICES: usize = 1000;
 #[derive(Copy, Clone, Debug)]
 struct Vertex {
     position: [f32; 2],
-    //  tex_coords: [f32; 2],
+    tex_coords: [f32; 2],
 }
 
 implement_vertex!(Vertex, position);
@@ -156,17 +156,17 @@ fn compute_skeleton_vertices(
             Some(attach) => attach,
         };
 
-        let attachment_indices = match attachment {
+        let (attachment_indices, uvs) = match attachment {
             Attachment::Mesh(mesh) => {
                 let len = mesh.world_vertices_len();
                 mesh.compute_world_vertices(&slot, 0, len as i32, world_vertices, 0, 2);
 
-                mesh.triangles()
+                (mesh.triangles(), mesh.uvs())
             }
             Attachment::Region(region) => {
                 region.compute_world_vertices(&slot.bone().unwrap(), world_vertices, 0, 2);
 
-                quad_indices.to_vec()
+                (quad_indices.to_vec(), region.uvs().to_vec())
             }
             _ => continue,
         };
@@ -177,6 +177,7 @@ fn compute_skeleton_vertices(
 
             vertices.push(Vertex {
                 position: [world_vertices[index], world_vertices[index + 1]],
+                tex_coords: [uvs[index], uvs[index + 1]],
             });
             indices.push((vertices.len() - 1) as u32);
         }
