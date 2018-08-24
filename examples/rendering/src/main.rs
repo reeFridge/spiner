@@ -20,6 +20,7 @@ use spiner::atlas::Atlas;
 use spiner::attachment::Attachment;
 use spiner::skeleton::json::Json as SkeletonJson;
 use spiner::skeleton::Skeleton;
+use spiner::attachment::vertex::Vertex as VertexAttachment;
 
 #[derive(Copy, Clone, Debug)]
 struct Vertex {
@@ -68,9 +69,9 @@ fn main() {
 
     // setup spine
     let mut atlas =
-        Atlas::from_file("./assets/spineboy/spineboy.atlas").expect("Cannot read atlas");
+        Atlas::from_file("./assets/raptor/raptor.atlas").expect("Cannot read atlas");
     let skeleton_data = SkeletonJson::new(&mut atlas, 1.)
-        .read_skeleton_file("./assets/spineboy/spineboy.json")
+        .read_skeleton_file("./assets/raptor/raptor.json")
         .expect("Cannot parse skeleton data");
 
     let mut animation_state_data = StateData::from(&skeleton_data);
@@ -79,7 +80,7 @@ fn main() {
     let mut animation_state = AnimationState::from(&animation_state_data);
     let mut skeleton = Skeleton::from(&skeleton_data);
 
-    skeleton.set_position((0., -300.));
+    skeleton.set_position((0., -500.));
 
     let animations = skeleton_data.animations();
     animations.iter().enumerate().for_each(|(i, anim)| {
@@ -87,7 +88,7 @@ fn main() {
     });
 
     // Choose animation to play
-    let anim = animations.iter().nth(4);
+    let anim = animations.iter().nth(3);
     animation_state.set_animation(0, anim.unwrap(), true);
 
     let mut perspective = [[0.0; 3]; 3];
@@ -106,7 +107,7 @@ fn main() {
         animation_state.update(0.01);
         animation_state.apply(&mut skeleton);
         skeleton.update_world_transform();
-        
+
         let (vertices, indices) = compute_skeleton_vertices(&skeleton);
         let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
         let index_buffer =
@@ -140,38 +141,48 @@ fn main() {
 }
 
 fn compute_skeleton_vertices(skeleton: &Skeleton) -> (Vec<Vertex>, Vec<u32>) {
-    let mut pos = vec![0.; 8];
     let mut vertices = Vec::new();
-    let mut indices = Vec::new();
+    let mut indices = Vec::<u32>::new();
 
-    let mut n = 0 as usize;
     for slot in skeleton.slots_ordered().iter() {
         let attachment = match slot.attachment() {
             None => continue,
             Some(attach) => attach,
         };
 
-        let mut push_vertex = |x: f32, y: f32| {
-            vertices.push(Vertex { position: [x, y] });
-        };
-
         match attachment {
+            Attachment::Mesh(mesh) => {
+                let len = mesh.world_vertices_len();
+                let mut pos = vec![0.; len];
+                mesh.compute_world_vertices(&slot, 0, len as i32, &mut pos, 0, 2);
+                for index in mesh.triangles().iter() {
+                    let index = (*index << 1) as usize;
+                    
+                    vertices.push(Vertex { position: [pos[index], pos[index + 1]]});
+                    indices.push((vertices.len() - 1) as u32);
+                }
+            }
             Attachment::Region(region) => {
+                let mut pos = vec![0.; 8];
                 region.compute_world_vertices(&slot.bone().unwrap(), &mut pos, 0, 2);
-                push_vertex(pos[0], pos[1]);
-                push_vertex(pos[2], pos[3]);
-                push_vertex(pos[4], pos[5]);
-                push_vertex(pos[6], pos[7]);
-
-                let i = 4 * n as u32;
-                indices.push(i);
-                indices.push(i + 1);
-                indices.push(i + 2);
-                indices.push(i + 2);
-                indices.push(i + 3);
-                indices.push(i);
-
-                n += 1;
+                vertices.push(Vertex {
+                    position: [pos[0], pos[1]],
+                });
+                indices.push((vertices.len() - 1) as u32);
+                vertices.push(Vertex {
+                    position: [pos[2], pos[3]],
+                });
+                indices.push((vertices.len() - 1) as u32);
+                vertices.push(Vertex {
+                    position: [pos[4], pos[5]],
+                });
+                indices.push((vertices.len() - 1) as u32);
+                indices.push((vertices.len() - 1) as u32);
+                vertices.push(Vertex {
+                    position: [pos[6], pos[7]],
+                });
+                indices.push((vertices.len() - 1) as u32);
+                indices.push((vertices.len() - 4) as u32);
             }
             _ => continue,
         }
