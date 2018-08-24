@@ -17,10 +17,12 @@ use std::io::Read;
 
 use spiner::animation::state::{State as AnimationState, StateData};
 use spiner::atlas::Atlas;
+use spiner::attachment::vertex::Vertex as VertexAttachment;
 use spiner::attachment::Attachment;
 use spiner::skeleton::json::Json as SkeletonJson;
 use spiner::skeleton::Skeleton;
-use spiner::attachment::vertex::Vertex as VertexAttachment;
+
+const MAX_VERTICES: usize = 1000;
 
 #[derive(Copy, Clone, Debug)]
 struct Vertex {
@@ -68,8 +70,7 @@ fn main() {
     let program = glium::Program::from_source(&display, vertex_src, fragment_src, None).unwrap();
 
     // setup spine
-    let mut atlas =
-        Atlas::from_file("./assets/raptor/raptor.atlas").expect("Cannot read atlas");
+    let mut atlas = Atlas::from_file("./assets/raptor/raptor.atlas").expect("Cannot read atlas");
     let skeleton_data = SkeletonJson::new(&mut atlas, 1.)
         .read_skeleton_file("./assets/raptor/raptor.json")
         .expect("Cannot parse skeleton data");
@@ -91,24 +92,25 @@ fn main() {
     let anim = animations.iter().nth(3);
     animation_state.set_animation(0, anim.unwrap(), true);
 
-    let mut perspective = [[0.0; 3]; 3];
+    let mut perspective = [[0.; 3]; 3];
+    let mut world_vertices = vec![0.; MAX_VERTICES];
 
     // the main loop
     run::start_loop((1_000_000_000.0 / 60.) as u64, || {
         let mut target = display.draw();
 
         let (width, height) = target.get_dimensions();
-        perspective[0][0] = 1.0 / width as f32;
-        perspective[1][1] = 1.0 / height as f32;
-        perspective[2][2] = 1.0;
+        perspective[0][0] = 1. / width as f32;
+        perspective[1][1] = 1. / height as f32;
+        perspective[2][2] = 1.;
 
-        target.clear_color(0.0, 0.0, 1.0, 0.0);
+        target.clear_color(0., 0., 1., 0.);
 
         animation_state.update(0.01);
         animation_state.apply(&mut skeleton);
         skeleton.update_world_transform();
 
-        let (vertices, indices) = compute_skeleton_vertices(&skeleton);
+        let (vertices, indices) = compute_skeleton_vertices(&skeleton, &mut world_vertices);
         let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
         let index_buffer =
             glium::index::IndexBuffer::new(&display, PrimitiveType::TrianglesList, &indices)
@@ -140,9 +142,13 @@ fn main() {
     });
 }
 
-fn compute_skeleton_vertices(skeleton: &Skeleton) -> (Vec<Vertex>, Vec<u32>) {
+fn compute_skeleton_vertices(
+    skeleton: &Skeleton,
+    world_vertices: &mut Vec<f32>,
+) -> (Vec<Vertex>, Vec<u32>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::<u32>::new();
+    let quad_indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
 
     for slot in skeleton.slots_ordered().iter() {
         let attachment = match slot.attachment() {
@@ -150,41 +156,29 @@ fn compute_skeleton_vertices(skeleton: &Skeleton) -> (Vec<Vertex>, Vec<u32>) {
             Some(attach) => attach,
         };
 
-        match attachment {
+        let attachment_indices = match attachment {
             Attachment::Mesh(mesh) => {
                 let len = mesh.world_vertices_len();
-                let mut pos = vec![0.; len];
-                mesh.compute_world_vertices(&slot, 0, len as i32, &mut pos, 0, 2);
-                for index in mesh.triangles().iter() {
-                    let index = (*index << 1) as usize;
-                    
-                    vertices.push(Vertex { position: [pos[index], pos[index + 1]]});
-                    indices.push((vertices.len() - 1) as u32);
-                }
+                mesh.compute_world_vertices(&slot, 0, len as i32, world_vertices, 0, 2);
+
+                mesh.triangles()
             }
             Attachment::Region(region) => {
-                let mut pos = vec![0.; 8];
-                region.compute_world_vertices(&slot.bone().unwrap(), &mut pos, 0, 2);
-                vertices.push(Vertex {
-                    position: [pos[0], pos[1]],
-                });
-                indices.push((vertices.len() - 1) as u32);
-                vertices.push(Vertex {
-                    position: [pos[2], pos[3]],
-                });
-                indices.push((vertices.len() - 1) as u32);
-                vertices.push(Vertex {
-                    position: [pos[4], pos[5]],
-                });
-                indices.push((vertices.len() - 1) as u32);
-                indices.push((vertices.len() - 1) as u32);
-                vertices.push(Vertex {
-                    position: [pos[6], pos[7]],
-                });
-                indices.push((vertices.len() - 1) as u32);
-                indices.push((vertices.len() - 4) as u32);
+                region.compute_world_vertices(&slot.bone().unwrap(), world_vertices, 0, 2);
+
+                quad_indices.to_vec()
             }
             _ => continue,
+        };
+
+        for index in attachment_indices.iter() {
+            // multiply by two (use bitwice left-shift cause u16)
+            let index = (*index << 1) as usize;
+
+            vertices.push(Vertex {
+                position: [world_vertices[index], world_vertices[index + 1]],
+            });
+            indices.push((vertices.len() - 1) as u32);
         }
     }
 
