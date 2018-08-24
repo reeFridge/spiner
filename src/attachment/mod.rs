@@ -16,6 +16,7 @@ pub mod path;
 pub mod point;
 pub mod region;
 pub mod clipping;
+pub mod vertex;
 
 use self::bounding_box::BoundingBox;
 use self::region::Region;
