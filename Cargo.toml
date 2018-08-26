@@ -12,6 +12,6 @@ path = "examples/rendering/src/main.rs"
 
 [dev-dependencies]
 libc = "0.2"
-png = "0.12"
+image = "*"
 glium = "0.22"
 time = "0.1"

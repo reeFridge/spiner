@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate spiner;
+extern crate image;
 extern crate libc;
-extern crate png;
 #[macro_use]
 extern crate glium;
 extern crate libspine_sys;
@@ -15,10 +15,12 @@ use std::fs::File;
 use std::io::Error;
 use std::io::Read;
 
+use glium::texture::{CompressedSrgbTexture2d, RawImage2d};
 use spiner::animation::state::{State as AnimationState, StateData};
-use spiner::atlas::Atlas;
+use spiner::atlas::{page::Page, Atlas};
 use spiner::attachment::vertex::Vertex as VertexAttachment;
 use spiner::attachment::Attachment;
+use spiner::extension::Texture;
 use spiner::skeleton::json::Json as SkeletonJson;
 use spiner::skeleton::Skeleton;
 
@@ -30,7 +32,7 @@ struct Vertex {
     tex_coords: [f32; 2],
 }
 
-implement_vertex!(Vertex, position);
+implement_vertex!(Vertex, position, tex_coords);
 
 fn read_file(path: &str) -> Result<Vec<u8>, Error> {
     println!("read file {}", path);
@@ -40,15 +42,16 @@ fn read_file(path: &str) -> Result<Vec<u8>, Error> {
     Ok(buf)
 }
 
-fn read_texture(path: &str) -> Result<(Vec<u8>, (u32, u32)), Error> {
+fn read_texture(path: &str) -> Result<Texture, Error> {
     println!("read texture {}", path);
-    let decoder = png::Decoder::new(File::open(path)?);
-    let (info, mut reader) = decoder.read_info()?;
-    let len = info.buffer_size();
-    let mut buf = vec![0; len];
-    reader.next_frame(&mut buf)?;
+    let image = image::open(path).unwrap().to_rgba();
+    let (width, height) = image.dimensions();
 
-    Ok((buf, (info.width, info.height)))
+    Ok(Texture {
+        buffer: image.into_raw(),
+        width: width,
+        height: height,
+    })
 }
 
 extend_spine!({
@@ -64,14 +67,33 @@ fn main() {
         .with_title("Spiner rendering example".to_owned());
     let context = glium::glutin::ContextBuilder::new();
     let display = glium::Display::new(window, context, &events_loop).unwrap();
+    let mut textures = std::collections::HashMap::new();
 
     let vertex_src = include_str!("../gl/spine.vert");
     let fragment_src = include_str!("../gl/spine.frag");
     let program = glium::Program::from_source(&display, vertex_src, fragment_src, None).unwrap();
+    let params = glium::DrawParameters {
+        blend: glium::Blend::alpha_blending(),
+        ..Default::default()
+    };
 
     // setup spine
     let mut atlas = Atlas::from_file("./assets/raptor/raptor.atlas").expect("Cannot read atlas");
-    let skeleton_data = SkeletonJson::new(&mut atlas, 1.)
+    for page in atlas.pages().iter() {
+        println!("load page {} into texture", page.name);
+        let texture = page.renderer_object();
+        let image = unsafe {
+            RawImage2d::from_raw_rgba_reversed(
+                &(*texture).buffer,
+                ((*texture).width, (*texture).height),
+            )
+        };
+        textures.insert(
+            page.name.clone(),
+            CompressedSrgbTexture2d::new(&display, image).unwrap(),
+        );
+    }
+    let skeleton_data = SkeletonJson::new(&mut atlas, 2.)
         .read_skeleton_file("./assets/raptor/raptor.json")
         .expect("Cannot parse skeleton data");
 
@@ -81,7 +103,7 @@ fn main() {
     let mut animation_state = AnimationState::from(&animation_state_data);
     let mut skeleton = Skeleton::from(&skeleton_data);
 
-    skeleton.set_position((0., -500.));
+    skeleton.set_position((0., -960.));
 
     let animations = skeleton_data.animations();
     animations.iter().enumerate().for_each(|(i, anim)| {
@@ -110,24 +132,22 @@ fn main() {
         animation_state.apply(&mut skeleton);
         skeleton.update_world_transform();
 
-        let (vertices, indices) = compute_skeleton_vertices(&skeleton, &mut world_vertices);
-        let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
-        let index_buffer =
-            glium::index::IndexBuffer::new(&display, PrimitiveType::TrianglesList, &indices)
+        let (page, vertices, indices) = compute_skeleton_vertices(&skeleton, &mut world_vertices);
+
+        if let Some(texture) = page.and_then(|p| textures.get(&p.name)) {
+            let vertex_buffer = glium::VertexBuffer::new(&display, &vertices).unwrap();
+            let index_buffer =
+                glium::index::IndexBuffer::new(&display, PrimitiveType::TrianglesList, &indices)
+                    .unwrap();
+            let uniforms = uniform! {
+                perspective: perspective,
+                tex: texture
+            };
+            target
+                .draw(&vertex_buffer, &index_buffer, &program, &uniforms, &params)
                 .unwrap();
-        let uniforms = uniform! {
-            perspective: perspective
-        };
-        target
-            .draw(
-                &vertex_buffer,
-                &index_buffer,
-                &program,
-                &uniforms,
-                &Default::default(),
-            )
-            .unwrap();
-        target.finish().unwrap();
+            target.finish().unwrap();
+        }
 
         let mut action = run::Action::Continue;
         events_loop.poll_events(|event| match event {
@@ -145,10 +165,11 @@ fn main() {
 fn compute_skeleton_vertices(
     skeleton: &Skeleton,
     world_vertices: &mut Vec<f32>,
-) -> (Vec<Vertex>, Vec<u32>) {
+) -> (Option<Page>, Vec<Vertex>, Vec<u32>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::<u32>::new();
     let quad_indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
+    let mut page = None;
 
     for slot in skeleton.slots_ordered().iter() {
         let attachment = match slot.attachment() {
@@ -160,16 +181,26 @@ fn compute_skeleton_vertices(
             Attachment::Mesh(mesh) => {
                 let len = mesh.world_vertices_len();
                 mesh.compute_world_vertices(&slot, 0, len as i32, world_vertices, 0, 2);
+                if page.as_ref().is_none() {
+                    page = Some(mesh.atlas_region().page());
+                }
 
                 (mesh.triangles(), mesh.uvs())
             }
             Attachment::Region(region) => {
                 region.compute_world_vertices(&slot.bone().unwrap(), world_vertices, 0, 2);
+                if page.as_ref().is_none() {
+                    page = Some(region.atlas_region().page());
+                }
 
                 (quad_indices.to_vec(), region.uvs().to_vec())
             }
             _ => continue,
         };
+        let (width, height) = page.as_ref()
+            .map(|p| (p.width as f32, p.height as f32))
+            .unwrap_or((1., 1.));
+        let to_tex_coords = |x: f32, y: f32| [x / width, 1.0 - y / height];
 
         for index in attachment_indices.iter() {
             // multiply by two (use bitwice left-shift cause u16)
@@ -177,11 +208,11 @@ fn compute_skeleton_vertices(
 
             vertices.push(Vertex {
                 position: [world_vertices[index], world_vertices[index + 1]],
-                tex_coords: [uvs[index], uvs[index + 1]],
+                tex_coords: to_tex_coords(uvs[index] * width, uvs[index + 1] * height),
             });
             indices.push((vertices.len() - 1) as u32);
         }
     }
 
-    (vertices, indices)
+    (page, vertices, indices)
 }
