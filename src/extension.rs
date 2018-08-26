@@ -1,3 +1,10 @@
+#[derive(Debug, Clone)]
+pub struct Texture {
+    pub buffer: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
 #[macro_export]
 macro_rules! extend_spine {
     ({ _spUtil_readFile -> $read_file:ident, _spAtlasPage_createTexture -> $read_texture:ident}) => {
@@ -9,6 +16,7 @@ macro_rules! extend_spine {
             use libc;
             use libspine_sys::spAtlasPage;
             use super::{$read_file, $read_texture};
+            use spiner::extension::Texture;
 
             impl_read_file!($read_file);
             impl_create_texture!($read_texture);
@@ -16,7 +24,7 @@ macro_rules! extend_spine {
             #[no_mangle]
             pub extern fn _spAtlasPage_disposeTexture(atlas: *mut spAtlasPage) {
                 unsafe {
-                    libc::free((*atlas).rendererObject as *mut libc::c_void);
+                    Box::from_raw((*atlas).rendererObject as *mut Texture);
                 }
             }
         }
@@ -53,12 +61,15 @@ macro_rules! impl_create_texture {
     ($r:ident) => {
         #[no_mangle]
         pub extern fn _spAtlasPage_createTexture(atlas: *mut spAtlasPage, path: *const c_char) {
-            let (buf, (w, h)) = path_str!(path).and_then($r).unwrap();
-
+            let texture = Box::new(path_str!(path).and_then($r).unwrap());
+            let width = texture.width;
+            let height = texture.height;
+            let ptr = Box::into_raw(texture) as *mut _ as *mut c_void;
+            
             unsafe {
-                (*atlas).width = w as i32;
-                (*atlas).height = h as i32;
-                (*atlas).rendererObject = raw_copy!(buf.as_ptr(), buf.len()) as *mut c_void;
+                (*atlas).width = width as i32;
+                (*atlas).height = height as i32;
+                (*atlas).rendererObject = ptr;
             }
         }
     }

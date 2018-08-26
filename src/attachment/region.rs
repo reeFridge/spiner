@@ -1,6 +1,7 @@
-use libspine_sys::{spRegionAttachment, spRegionAttachment_computeWorldVertices, spBone};
+use libspine_sys::{spRegionAttachment, spAtlasRegion, spRegionAttachment_computeWorldVertices, spBone};
 use common::AsPtr;
 use bone::Bone;
+use atlas::region::Region as AtlasRegion;
 
 pub struct Region {
     pub raw_ptr: *const spRegionAttachment
@@ -12,6 +13,12 @@ impl Region {
     pub fn uvs(&self) -> [f32; 8] {
         unsafe {
             (*self.raw_ptr).uvs
+        }
+    }
+
+    pub fn atlas_region(&self) -> AtlasRegion {
+        unsafe {
+            AtlasRegion::from((*self.raw_ptr).rendererObject as *const spAtlasRegion)
         }
     }
     

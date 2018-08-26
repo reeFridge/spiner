@@ -1,7 +1,8 @@
 use super::vertex::Vertex;
 use common::{AsPtr, from_raw_buf};
-use libspine_sys::{spMeshAttachment, spVertexAttachment_computeWorldVertices, spSlot, spVertexAttachment};
+use libspine_sys::{spMeshAttachment, spVertexAttachment_computeWorldVertices, spSlot, spVertexAttachment, spAtlasRegion};
 use slot::Slot;
+use atlas::region::Region as AtlasRegion;
 
 pub struct Mesh {
     pub raw_ptr: *const spMeshAttachment,
@@ -14,6 +15,12 @@ impl Mesh {
         unsafe {
             let len = self.world_vertices_len();
             from_raw_buf((*self.raw_ptr).uvs, len)
+        }
+    }
+
+    pub fn atlas_region(&self) -> AtlasRegion {
+        unsafe {
+            AtlasRegion::from((*self.raw_ptr).rendererObject as *const spAtlasRegion)
         }
     }
     
