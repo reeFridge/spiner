@@ -1,6 +1,6 @@
 [package]
 name = "spiner"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["reeFridge <reefridgerator@gmail.com>"]
 
 [dependencies.libspine-sys]
@@ -12,6 +12,6 @@ path = "examples/rendering/src/main.rs"
 
 [dev-dependencies]
 libc = "0.2"
-image = "*"
+image = "0.19"
 glium = "0.22"
 time = "0.1"
