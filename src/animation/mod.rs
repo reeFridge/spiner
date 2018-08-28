@@ -4,6 +4,7 @@ use std::os::raw::c_char;
 
 pub mod state;
 
+#[derive(Debug, Clone)]
 pub struct Animation {
     pub name: String,
     pub duration: f32,

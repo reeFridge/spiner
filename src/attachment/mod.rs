@@ -1,54 +1,52 @@
-use libspine_sys::{spAttachment, spAttachmentType::{self, *}};
-use libspine_sys::{
-    spBoundingBoxAttachment,
-    spMeshAttachment,
-    spPathAttachment,
-    spPointAttachment,
-    spRegionAttachment,
-    spClippingAttachment,
-};
-use common::AsPtr;
+use libspine_sys::spAttachmentType::*;
+use libspine_sys::*;
+use raw::*;
 use std::ffi::CStr;
 
 pub mod bounding_box;
+pub mod clipping;
 pub mod mesh;
 pub mod path;
 pub mod point;
 pub mod region;
-pub mod clipping;
 pub mod vertex;
 
 use self::bounding_box::BoundingBox;
-use self::region::Region;
+use self::clipping::Clipping;
 use self::mesh::Mesh;
 use self::path::Path;
 use self::point::Point;
-use self::clipping::Clipping;
+use self::region::Region;
 
 macro_rules! impl_attachment {
     ($t:ident) => {
         impl Base for $t {
             fn name(&self) -> Option<String> {
+                let ptr = self.as_raw() as *const _ as *const spAttachment;
+
                 unsafe {
-                    (*(self.as_ptr() as *const spAttachment)).name
-                        .as_ref()
-                        .map(|name| CStr::from_ptr(name).to_string_lossy().to_owned().into())
+                    ptr.as_ref().and_then(|attach| {
+                        attach
+                            .name
+                            .as_ref()
+                            .map(|name| CStr::from_ptr(name).to_string_lossy().to_owned().into())
+                    })
                 }
             }
 
-            fn raw_type(&self) -> AttachmentType {
-                unsafe {
-                    (*(self.as_ptr() as *const spAttachment)).type_
-                }
+            unsafe fn raw_type(&self) -> AttachmentType {
+                let ptr = self.as_raw() as *const _ as *const spAttachment;
+
+                (*ptr).type_
             }
         }
-    }
+    };
 }
 
 macro_rules! create_attachment {
-    ($t:ident, $raw_type:ident, $ptr:ident) => {
-        Attachment::$t($t { raw_ptr: $ptr as *const $raw_type })
-    }
+    ($t:ident, $raw:ident, $base:ident) => {
+        Attachment::$t($t::from_raw($base.cast::<$raw>()))
+    };
 }
 
 macro_rules! attachment_method {
@@ -60,9 +58,9 @@ macro_rules! attachment_method {
             Attachment::LinkedMesh(ref mesh) => mesh.$m(),
             Attachment::Path(ref path) => path.$m(),
             Attachment::Point(ref point) => point.$m(),
-            Attachment::Clipping(ref clipping) => clipping.$m()
+            Attachment::Clipping(ref clipping) => clipping.$m(),
         }
-    }
+    };
 }
 
 pub type AttachmentType = spAttachmentType;
@@ -77,11 +75,28 @@ pub enum Attachment {
     Clipping(Clipping),
 }
 
+impl Attachment {
+    pub fn from_raw(raw: NonNull<spAttachment>) -> Self {
+        match unsafe { raw.as_ref().type_ } {
+            SP_ATTACHMENT_REGION => create_attachment!(Region, spRegionAttachment, raw),
+            SP_ATTACHMENT_BOUNDING_BOX => {
+                create_attachment!(BoundingBox, spBoundingBoxAttachment, raw)
+            }
+            SP_ATTACHMENT_MESH | SP_ATTACHMENT_LINKED_MESH => {
+                create_attachment!(Mesh, spMeshAttachment, raw)
+            }
+            SP_ATTACHMENT_PATH => create_attachment!(Path, spPathAttachment, raw),
+            SP_ATTACHMENT_POINT => create_attachment!(Point, spPointAttachment, raw),
+            SP_ATTACHMENT_CLIPPING => create_attachment!(Clipping, spClippingAttachment, raw),
+        }
+    }
+}
+
 impl Base for Attachment {
     fn name(&self) -> Option<String> {
         attachment_method!(self, name)
     }
-    fn raw_type(&self) -> AttachmentType {
+    unsafe fn raw_type(&self) -> AttachmentType {
         attachment_method!(self, raw_type)
     }
 }
@@ -95,22 +110,5 @@ impl_attachment!(Clipping);
 
 pub trait Base {
     fn name(&self) -> Option<String>;
-    fn raw_type(&self) -> AttachmentType;
-}
-
-impl From<*const spAttachment> for Attachment {
-    fn from(raw_ptr: *const spAttachment) -> Self {
-        let type_ = unsafe {
-            (*raw_ptr).type_
-        };
-
-        match type_ {
-            SP_ATTACHMENT_REGION => create_attachment!(Region, spRegionAttachment, raw_ptr),
-            SP_ATTACHMENT_BOUNDING_BOX => create_attachment!(BoundingBox, spBoundingBoxAttachment, raw_ptr),
-            SP_ATTACHMENT_MESH | SP_ATTACHMENT_LINKED_MESH => create_attachment!(Mesh, spMeshAttachment, raw_ptr),
-            SP_ATTACHMENT_PATH => create_attachment!(Path, spPathAttachment, raw_ptr),
-            SP_ATTACHMENT_POINT => create_attachment!(Point, spPointAttachment, raw_ptr),
-            SP_ATTACHMENT_CLIPPING => create_attachment!(Clipping, spClippingAttachment, raw_ptr)
-        }
-    }
+    unsafe fn raw_type(&self) -> AttachmentType;
 }

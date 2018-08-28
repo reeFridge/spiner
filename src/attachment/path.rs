@@ -1,8 +1,17 @@
 use libspine_sys::spPathAttachment;
-use common::AsPtr;
+use raw::*;
 
 pub struct Path {
-    pub raw_ptr: *const spPathAttachment
+    raw: NonNull<spPathAttachment>,
 }
 
-impl_as_ptr!(Path, spPathAttachment);
+impl Path {
+    pub fn from_raw(raw: NonNull<spPathAttachment>) -> Self {
+        Path {
+            raw
+        }
+    }
+}
+
+impl_as_raw!(Path, raw, spPathAttachment);
+impl_as_raw_mut!(Path, raw);

@@ -1,8 +1,17 @@
 use libspine_sys::spClippingAttachment;
-use common::AsPtr;
+use raw::*;
 
 pub struct Clipping {
-    pub raw_ptr: *const spClippingAttachment
+    raw: NonNull<spClippingAttachment>,
 }
 
-impl_as_ptr!(Clipping, spClippingAttachment);
+impl Clipping {
+    pub fn from_raw(raw: NonNull<spClippingAttachment>) -> Self {
+        Clipping {
+            raw
+        }
+    }
+}
+
+impl_as_raw!(Clipping, raw, spClippingAttachment);
+impl_as_raw_mut!(Clipping, raw);

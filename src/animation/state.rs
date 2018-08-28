@@ -1,93 +1,88 @@
-use libspine_sys::{
-    spAnimationState,
-    spAnimationState_create,
-    spAnimationState_dispose,
-    spAnimationState_setAnimationByName,
-    spAnimationState_update,
-    spAnimationState_apply,
-};
-use libspine_sys::{spAnimationStateData, spAnimationStateData_create, spAnimationStateData_dispose};
-use libspine_sys::spSkeletonData;
-use skeleton::data::Data as SkeletonData;
 use animation::Animation;
+use libspine_sys::*;
+use raw::*;
+use skeleton::{data::Data as SkeletonData, Skeleton};
 use std::ffi::CString;
-use skeleton::Skeleton;
+use std::io::{Error, ErrorKind};
+use std::ptr::NonNull;
+use std::rc::Rc;
 
 pub struct State {
-    raw_ptr: *mut spAnimationState
+    data: Rc<StateData>,
+    raw: NonNull<spAnimationState>,
 }
 
+impl_as_raw!(State, raw, spAnimationState);
+impl_as_raw_mut!(State, raw);
+
 impl State {
+    pub fn from_data(data: Rc<StateData>) -> Result<Self, Error> {
+        let ptr = unsafe {
+            spAnimationState_create(data.as_raw() as *const _ as *mut spAnimationStateData)
+        };
+
+        try_wrap!(ptr, |raw| State{ data, raw })
+    }
+
     pub fn set_animation(&mut self, track_index: i32, animation: &Animation, loop_: bool) {
         unsafe {
             let c_str = CString::new(animation.name.clone()).unwrap();
-            let _track = spAnimationState_setAnimationByName(self.raw_ptr, track_index, c_str.as_ptr(), loop_ as i32);
+            let _track = spAnimationState_setAnimationByName(
+                self.as_raw_mut(),
+                track_index,
+                c_str.as_ptr(),
+                loop_ as i32,
+            );
         }
     }
 
     pub fn update(&mut self, delta: f32) {
         unsafe {
-            spAnimationState_update(self.raw_ptr, delta);
+            spAnimationState_update(self.as_raw_mut(), delta);
         }
     }
 
     pub fn apply(&mut self, skeleton: &mut Skeleton) {
-        let _result = unsafe {
-            spAnimationState_apply(self.raw_ptr, skeleton.raw_ptr)
-        };
-    }
-}
-
-impl<'a> From<&'a StateData<'a>> for State {
-    fn from(data: &'a StateData<'a>) -> Self {
-        let raw_ptr = unsafe {
-            spAnimationState_create(data.raw_ptr as *mut spAnimationStateData)
-        };
-
-        State {
-            raw_ptr
-        }
+        let _result = unsafe { spAnimationState_apply(self.as_raw_mut(), skeleton.as_raw_mut()) };
     }
 }
 
 impl Drop for State {
     fn drop(&mut self) {
         unsafe {
-            spAnimationState_dispose(self.raw_ptr);
+            spAnimationState_dispose(self.raw.as_ptr());
         }
     }
 }
 
-pub struct StateData<'a> {
-    data: &'a SkeletonData,
-    pub raw_ptr: *mut spAnimationStateData,
+pub struct StateData {
+    data: Rc<SkeletonData>,
+    raw: NonNull<spAnimationStateData>,
 }
 
-impl<'a> StateData<'a> {
-    pub fn set_default_mix(&mut self, val: f32) {
-        unsafe {
-            (*self.raw_ptr).defaultMix = val;
-        }
-    }
-}
+impl_as_raw!(StateData, raw, spAnimationStateData);
+impl_as_raw_mut!(StateData, raw);
 
-impl<'a> From<&'a SkeletonData> for StateData<'a> {
-    fn from(data: &'a SkeletonData) -> Self {
-        let raw_ptr = unsafe {
-            spAnimationStateData_create(data.raw_ptr as *mut spSkeletonData)
+impl StateData {
+    pub fn from_skeleton_data(data: Rc<SkeletonData>) -> Result<Self, Error> {
+        let ptr = unsafe {
+            spAnimationStateData_create(data.as_raw() as *const _ as *mut spSkeletonData)
         };
 
-        StateData {
-            raw_ptr,
-            data,
+        try_wrap!(ptr, |raw| StateData { data, raw })
+    }
+
+    pub fn set_default_mix(&mut self, val: f32) {
+        unsafe {
+            self.raw.as_mut().defaultMix = val;
         }
     }
 }
 
-impl<'a> Drop for StateData<'a> {
+impl Drop for StateData {
     fn drop(&mut self) {
         unsafe {
-            spAnimationStateData_dispose(self.raw_ptr);
+            spAnimationStateData_dispose(self.raw.as_ptr());
         }
     }
 }

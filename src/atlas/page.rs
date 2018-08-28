@@ -1,35 +1,39 @@
 use extension::Texture;
-use libspine_sys::spAtlasPage;
+use libspine_sys::*;
 use std::ffi::CStr;
+use raw::*;
 
 pub struct Page {
     pub name: String,
     pub width: i32,
     pub height: i32,
-    raw_ptr: *const spAtlasPage,
+    raw: NonNull<spAtlasPage>,
 }
 
+impl_as_raw!(Page, raw, spAtlasPage);
+impl_as_raw_mut!(Page, raw);
+
 impl Page {
-    pub fn renderer_object(&self) -> *mut Texture {
-        unsafe { (*self.raw_ptr).rendererObject as *mut Texture }
+    pub fn from_raw(raw: NonNull<spAtlasPage>) -> Self {
+        let raw_ref = unsafe { raw.as_ref() };
+        let name = unsafe { CStr::from_ptr(raw_ref.name).to_string_lossy().into_owned() };
+        let (width, height) = (raw_ref.width, raw_ref.height);
+
+        Page {
+            name,
+            width,
+            height,
+            raw,
+        }
+    }
+
+    pub fn renderer_object(&self) -> Option<&Texture> {
+        let ptr = self.as_raw().rendererObject as *mut Texture;
+
+        unsafe { ptr.as_ref() }
     }
 
     pub fn next(&self) -> Option<Page> {
-        let next_ptr = unsafe { (*self.raw_ptr).next.as_ref() };
-
-        next_ptr.map(|ptr| Page::from(ptr as *const spAtlasPage))
-    }
-}
-
-impl From<*const spAtlasPage> for Page {
-    fn from(raw_ptr: *const spAtlasPage) -> Self {
-        let name = unsafe {
-            CStr::from_ptr((*raw_ptr).name).to_string_lossy().into_owned()
-        };
-        let (width, height) = unsafe {
-            ((*raw_ptr).width, (*raw_ptr).height)
-        };
-        
-        Page { name, width, height, raw_ptr }
+        NonNull::new(self.as_raw().next).map(|raw| Page::from_raw(raw))
     }
 }

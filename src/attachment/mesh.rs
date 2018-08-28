@@ -1,40 +1,46 @@
 use super::vertex::Vertex;
-use common::{AsPtr, from_raw_buf};
-use libspine_sys::{spMeshAttachment, spVertexAttachment_computeWorldVertices, spSlot, spVertexAttachment, spAtlasRegion};
-use slot::Slot;
 use atlas::region::Region as AtlasRegion;
+use common::from_raw_buf;
+use libspine_sys::*;
+use raw::*;
+use slot::Slot;
 
 pub struct Mesh {
-    pub raw_ptr: *const spMeshAttachment,
+    raw: NonNull<spMeshAttachment>,
 }
 
-impl_as_ptr!(Mesh, spMeshAttachment);
+impl_as_raw!(Mesh, raw, spMeshAttachment);
+impl_as_raw_mut!(Mesh, raw);
 
 impl Mesh {
+    pub fn from_raw(raw: NonNull<spMeshAttachment>) -> Self {
+        Mesh { raw }
+    }
+
     pub fn uvs(&self) -> Vec<f32> {
         unsafe {
             let len = self.world_vertices_len();
-            from_raw_buf((*self.raw_ptr).uvs, len)
+            from_raw_buf(self.as_raw().uvs, len)
         }
     }
 
-    pub fn atlas_region(&self) -> AtlasRegion {
-        unsafe {
-            AtlasRegion::from((*self.raw_ptr).rendererObject as *const spAtlasRegion)
-        }
+    pub fn atlas_region(&self) -> Option<AtlasRegion> {
+        let ptr = self.as_raw().rendererObject as *mut spAtlasRegion;
+
+        NonNull::new(ptr).map(|raw| AtlasRegion::from_raw(raw))
     }
-    
+
     pub fn triangles(&self) -> Vec<u16> {
         unsafe {
-            let len = (*self.raw_ptr).trianglesCount as usize;
-            from_raw_buf((*self.raw_ptr).triangles, len)
+            let len = self.as_raw().trianglesCount as usize;
+            from_raw_buf(self.as_raw().triangles, len)
         }
     }
 }
 
 impl Vertex for Mesh {
     fn world_vertices_len(&self) -> usize {
-        unsafe { (*self.raw_ptr).super_.worldVerticesLength as usize }
+        self.as_raw().super_.worldVerticesLength as usize
     }
 
     fn compute_world_vertices(
@@ -47,8 +53,17 @@ impl Vertex for Mesh {
         stride: i32,
     ) {
         unsafe {
-            let super_: *const spVertexAttachment = &(*self.raw_ptr).super_;
-            spVertexAttachment_computeWorldVertices(super_ as *mut spVertexAttachment, slot.as_ptr() as *mut spSlot, start, count, vertices.as_mut_ptr(), offset, stride);
+            let vertex: *const _ = &self.as_raw().super_;
+            let slot: *const _ = slot.as_raw();
+            spVertexAttachment_computeWorldVertices(
+                vertex as *mut spVertexAttachment,
+                slot as *mut spSlot,
+                start,
+                count,
+                vertices.as_mut_ptr(),
+                offset,
+                stride,
+            );
         }
     }
 }

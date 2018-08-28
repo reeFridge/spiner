@@ -1,16 +1,17 @@
 use libspine_sys::spBone;
-use common::AsPtr;
+use raw::*;
 
 pub struct Bone {
-    raw_ptr: *mut spBone
+    raw: NonNull<spBone>
 }
 
-impl_as_ptr!(Bone, spBone);
+impl_as_raw!(Bone, raw, spBone);
+impl_as_raw_mut!(Bone, raw);
 
-impl From<*const spBone> for Bone {
-    fn from(raw_ptr: *const spBone) -> Self {
+impl Bone {
+    pub fn from_raw(raw: NonNull<spBone>) -> Self {
         Bone {
-            raw_ptr: raw_ptr as *mut spBone
+            raw
         }
     }
 }

@@ -1,8 +1,17 @@
 use libspine_sys::spBoundingBoxAttachment;
-use common::AsPtr;
+use raw::*;
 
 pub struct BoundingBox {
-    pub raw_ptr: *const spBoundingBoxAttachment
+    raw: NonNull<spBoundingBoxAttachment>,
 }
 
-impl_as_ptr!(BoundingBox, spBoundingBoxAttachment);
+impl BoundingBox {
+    pub fn from_raw(raw: NonNull<spBoundingBoxAttachment>) -> Self {
+        BoundingBox {
+            raw
+        }
+    }
+}
+
+impl_as_raw!(BoundingBox, raw, spBoundingBoxAttachment);
+impl_as_raw_mut!(BoundingBox, raw);

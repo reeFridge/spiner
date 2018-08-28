@@ -1,22 +1,22 @@
-use libspine_sys::{spAtlasRegion, spAtlasPage};
 use super::page::Page;
+use libspine_sys::*;
+use raw::*;
 
 pub struct Region {
-    raw_ptr: *const spAtlasRegion
+    raw: NonNull<spAtlasRegion>,
 }
+
+impl_as_raw!(Region, raw, spAtlasRegion);
+impl_as_raw_mut!(Region, raw);
 
 impl Region {
-    pub fn page(&self) -> Page {
-        unsafe {
-            Page::from((*self.raw_ptr).page as *const spAtlasPage)
+    pub fn from_raw(raw: NonNull<spAtlasRegion>) -> Self {
+        Region {
+            raw
         }
     }
-}
 
-impl From<*const spAtlasRegion> for Region {
-    fn from(raw_ptr: *const spAtlasRegion) -> Self {
-        Region {
-            raw_ptr
-        }
+    pub fn page(&self) -> Option<Page> {
+        NonNull::new(self.as_raw().page).map(|raw| Page::from_raw(raw))
     }
 }

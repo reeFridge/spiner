@@ -1,6 +1,7 @@
 extern crate libspine_sys;
 
 #[macro_use]
+mod raw;
 mod common;
 pub mod extension;
 pub mod bone;

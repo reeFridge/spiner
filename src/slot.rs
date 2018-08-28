@@ -1,36 +1,26 @@
-use libspine_sys::{spSlot, spAttachment, spBone};
 use attachment::Attachment;
-use common::AsPtr;
 use bone::Bone;
+use libspine_sys::*;
+use raw::*;
 
 pub struct Slot {
-    raw_ptr: *mut spSlot
+    raw: NonNull<spSlot>,
 }
 
-impl_as_ptr!(Slot, spSlot);
-
-impl From<*mut spSlot> for Slot {
-    fn from(raw_ptr: *mut spSlot) -> Self {
-        Slot {
-            raw_ptr
-        }
-    }
-}
+impl_as_raw!(Slot, raw, spSlot);
+impl_as_raw_mut!(Slot, raw);
 
 impl Slot {
-    pub fn attachment(&self) -> Option<Attachment> {
-        let attach_ref = unsafe {
-            (*self.raw_ptr).attachment.as_ref()
-        };
+    pub fn from_raw(raw: NonNull<spSlot>) -> Self {
+        Slot { raw }
+    }
 
-        attach_ref.map(|attach| Attachment::from(attach as *const spAttachment))
+    pub fn attachment(&self) -> Option<Attachment> {
+        NonNull::new(self.as_raw().attachment as *mut spAttachment)
+            .map(|raw| Attachment::from_raw(raw))
     }
 
     pub fn bone(&self) -> Option<Bone> {
-        let bone_ref = unsafe {
-            (*self.raw_ptr).bone.as_ref()
-        };
-
-        bone_ref.map(|bone| Bone::from(bone as *const spBone))
+        NonNull::new(self.as_raw().bone as *mut spBone).map(|raw| Bone::from_raw(raw))
     }
 }
