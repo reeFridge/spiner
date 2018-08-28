@@ -12,8 +12,10 @@ use glium::index::PrimitiveType;
 use glium::Surface;
 
 use std::fs::File;
+use std::io;
 use std::io::Error;
 use std::io::Read;
+use std::rc::Rc;
 
 use glium::texture::{CompressedSrgbTexture2d, RawImage2d};
 use spiner::animation::state::{State as AnimationState, StateData};
@@ -59,7 +61,91 @@ extend_spine!({
     _spAtlasPage_createTexture -> read_texture
 });
 
+struct Asset {
+    pub name: String,
+    path: String,
+}
+
+impl Asset {
+    pub fn new(name: &str, path: &str) -> Self {
+        Asset {
+            name: name.to_string(),
+            path: path.to_string(),
+        }
+    }
+
+    pub fn atlas(&self) -> String {
+        format!("{}/{}/{}.atlas", self.path, self.name, self.name)
+    }
+
+    pub fn skeleton(&self) -> String {
+        format!("{}/{}/{}.json", self.path, self.name, self.name)
+    }
+}
+
 fn main() {
+    let asset = Asset::new("raptor", "./assets");
+
+    // setup spine
+    let mut atlas = Atlas::from_file(&asset.atlas()).expect("Cannot read atlas");
+
+    // Fetch pages with textures for preloading
+    let pages: Vec<Page> = atlas.pages();
+
+    // Read, parse and store all skeleton information
+    let skeleton_data = Rc::new(
+        SkeletonJson::new(&mut atlas, 1.)
+            .expect("Cannot create skeleton json reader")
+            .read_skeleton_file(&asset.skeleton())
+            .expect("Cannot parse skeleton data"),
+    );
+
+    // Share part of skeleton info for animating
+    let mut animation_state_data = Rc::new(
+        StateData::from_skeleton_data(Rc::clone(&skeleton_data))
+            .expect("Cannot create animation state data"),
+    );
+    Rc::get_mut(&mut animation_state_data)
+        .unwrap()
+        .set_default_mix(0.5);
+
+    // One animation data may be used by several animation states
+    let mut animation_state = AnimationState::from_data(Rc::clone(&animation_state_data))
+        .expect("Cannot create animation state");
+
+    // Choose animation to play
+    let animations = skeleton_data.animations();
+    animations.iter().enumerate().for_each(|(i, anim)| {
+        println!("#{}: {}", i, anim.name);
+    });
+
+    println!("Enter animation name/number:");
+    let mut input = String::new();
+    let animation = match io::stdin().read_line(&mut input) {
+        Ok(_) => {
+            let input = input.trim();
+            if let Ok(num) = input.parse::<u32>() {
+                animations.iter().nth(num as usize).cloned()
+            } else if !input.is_empty() {
+                skeleton_data.find_animation_by_name(input)
+            } else {
+                panic!("You must enter animation name or number");
+            }
+        }
+        Err(error) => panic!("error: {}", error),
+    };
+
+    match animation {
+        Some(ref animation) => animation_state.set_animation(0, animation, true),
+        None => panic!("animation not found"),
+    }
+
+    let mut skeleton =
+        Skeleton::from_data(Rc::clone(&skeleton_data)).expect("Cannot create skeleton");
+    skeleton.set_position((0., -300.));
+    let mut perspective = [[0.; 3]; 3];
+    let mut world_vertices = vec![0.; MAX_VERTICES];
+
     // setup glium
     let mut events_loop = glium::glutin::EventsLoop::new();
     let window = glium::glutin::WindowBuilder::new()
@@ -67,7 +153,6 @@ fn main() {
         .with_title("Spiner rendering example".to_owned());
     let context = glium::glutin::ContextBuilder::new();
     let display = glium::Display::new(window, context, &events_loop).unwrap();
-    let mut textures = std::collections::HashMap::new();
 
     let vertex_src = include_str!("../gl/spine.vert");
     let fragment_src = include_str!("../gl/spine.frag");
@@ -77,47 +162,22 @@ fn main() {
         ..Default::default()
     };
 
-    // setup spine
-    let mut atlas = Atlas::from_file("./assets/raptor/raptor.atlas").expect("Cannot read atlas");
-    for page in atlas.pages().iter() {
+    // Preload textures
+    let mut textures = std::collections::HashMap::new();
+    let pages_iter = pages.iter().filter(|page| page.renderer_object().is_some());
+
+    for page in pages_iter {
         println!("load page {} into texture", page.name);
-        let texture = page.renderer_object();
-        let image = unsafe {
-            RawImage2d::from_raw_rgba_reversed(
-                &(*texture).buffer,
-                ((*texture).width, (*texture).height),
-            )
-        };
+        let texture = page.renderer_object().unwrap();
+        let image =
+            RawImage2d::from_raw_rgba_reversed(&texture.buffer, (texture.width, texture.height));
+
         textures.insert(
             page.name.clone(),
             CompressedSrgbTexture2d::new(&display, image).unwrap(),
         );
     }
-    let skeleton_data = SkeletonJson::new(&mut atlas, 2.)
-        .read_skeleton_file("./assets/raptor/raptor.json")
-        .expect("Cannot parse skeleton data");
 
-    let mut animation_state_data = StateData::from(&skeleton_data);
-    animation_state_data.set_default_mix(0.5);
-
-    let mut animation_state = AnimationState::from(&animation_state_data);
-    let mut skeleton = Skeleton::from(&skeleton_data);
-
-    skeleton.set_position((0., -960.));
-
-    let animations = skeleton_data.animations();
-    animations.iter().enumerate().for_each(|(i, anim)| {
-        println!("#{}: {}", i, anim.name);
-    });
-
-    // Choose animation to play
-    let anim = animations.iter().nth(3);
-    animation_state.set_animation(0, anim.unwrap(), true);
-
-    let mut perspective = [[0.; 3]; 3];
-    let mut world_vertices = vec![0.; MAX_VERTICES];
-
-    // the main loop
     run::start_loop((1_000_000_000.0 / 60.) as u64, || {
         let mut target = display.draw();
 
@@ -171,7 +231,7 @@ fn compute_skeleton_vertices(
     let quad_indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
     let mut page = None;
 
-    for slot in skeleton.slots_ordered().iter() {
+    for slot in skeleton.slots_ordered().iter_mut() {
         let attachment = match slot.attachment() {
             None => continue,
             Some(attach) => attach,
@@ -180,24 +240,25 @@ fn compute_skeleton_vertices(
         let (attachment_indices, uvs) = match attachment {
             Attachment::Mesh(mesh) => {
                 let len = mesh.world_vertices_len();
-                mesh.compute_world_vertices(&slot, 0, len as i32, world_vertices, 0, 2);
+                mesh.compute_world_vertices(slot, 0, len as i32, world_vertices, 0, 2);
                 if page.as_ref().is_none() {
-                    page = Some(mesh.atlas_region().page());
+                    page = mesh.atlas_region().and_then(|region| region.page());
                 }
 
                 (mesh.triangles(), mesh.uvs())
             }
-            Attachment::Region(region) => {
-                region.compute_world_vertices(&slot.bone().unwrap(), world_vertices, 0, 2);
+            Attachment::Region(mut region) => {
+                region.compute_world_vertices(&mut slot.bone().unwrap(), world_vertices, 0, 2);
                 if page.as_ref().is_none() {
-                    page = Some(region.atlas_region().page());
+                    page = region.atlas_region().and_then(|region| region.page());
                 }
 
                 (quad_indices.to_vec(), region.uvs().to_vec())
             }
             _ => continue,
         };
-        let (width, height) = page.as_ref()
+        let (width, height) = page
+            .as_ref()
             .map(|p| (p.width as f32, p.height as f32))
             .unwrap_or((1., 1.));
         let to_tex_coords = |x: f32, y: f32| [x / width, 1.0 - y / height];
