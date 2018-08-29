@@ -7,7 +7,6 @@ use std::ffi::CString;
 use std::ptr::NonNull;
 
 pub struct Data {
-    json: Json,
     raw: NonNull<spSkeletonData>,
 }
 
@@ -38,8 +37,8 @@ impl Data {
         unsafe { raw_ptr.as_ref().map(|anim_ref| Animation::from(anim_ref)) }
     }
 
-    pub fn from_json(json: Json, raw: NonNull<spSkeletonData>) -> Self {
-        Data { raw, json }
+    pub fn from_raw(raw: NonNull<spSkeletonData>) -> Self {
+        Data { raw }
     }
 }
 

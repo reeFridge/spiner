@@ -29,9 +29,15 @@ impl From<Error> for JsonError {
     }
 }
 
+impl From<JsonError> for Error {
+    fn from(json: JsonError) -> Self {
+        Error::new(ErrorKind::Other, json.0)
+    }
+}
+
 impl Json {
-    pub fn new(atlas: &mut Atlas, scale: f32) -> Result<Json, JsonError> {
-        let ptr = unsafe { spSkeletonJson_create(atlas.as_raw_mut()) };
+    pub fn new(atlas: &Atlas, scale: f32) -> Result<Json, JsonError> {
+        let ptr = unsafe { spSkeletonJson_create(atlas.as_raw() as *const _ as *mut spAtlas) };
 
         let mut raw = try_wrap!(ptr, |raw| raw)?;
         unsafe { raw.as_mut().scale = scale };
@@ -57,7 +63,7 @@ impl Json {
 
         match self.error() {
             Some(err) => Err(err),
-            None => Ok(try_wrap!(ptr, |raw| SkeletonData::from_json(self, raw))?),
+            None => Ok(try_wrap!(ptr, |raw| SkeletonData::from_raw(raw))?),
         }
     }
 }
