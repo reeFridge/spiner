@@ -10,9 +10,16 @@ git = "https://github.com/reeFridge/libspine-sys.git"
 name = "rendering"
 path = "examples/rendering/src/main.rs"
 
+[[example]]
+name = "rendering-gfx"
+path = "examples/rendering-gfx/src/main.rs"
+
 [dev-dependencies]
 libc = "0.2"
 image = "0.19"
 glium = "0.22"
 time = "0.1"
 rand = "0.5"
+glutin = "0.18"
+gfx = "0.17"
+gfx_window_glutin = "0.26"
